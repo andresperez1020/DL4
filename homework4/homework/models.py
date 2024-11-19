@@ -20,7 +20,7 @@ class MLPPlanner(nn.Module):
             n_waypoints (int): number of waypoints to predict
         """
         super().__init__()
-
+        self.n_waypoints = n_waypoints
         input_size = n_track * 2 * 2
         hidden_size = 64
         output_size = n_waypoints * 2
@@ -69,20 +69,12 @@ class TransformerPlanner(nn.Module):
         d_model: int = 64,
     ):
         super().__init__()
-
-        self.n_track = n_track
         self.n_waypoints = n_waypoints
-        self.d_model = d_model
-
-        self.query_embed = nn.Embedding(n_waypoints, d_model)
-
-        self.input_proj = nn.Linear(n_track * 2, d_model)
-
+        self.input_proj  = nn.Linear(n_track * 4, d_model)
         self.transformer_decoder = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(d_model=d_model, nhead=4),
-            num_layers=3,
+            nn.TransformerDecoderLayer(d_model = d_model, nhead = 4),
+            num_layers = 3
         )
-
         self.output_proj = nn.Linear(d_model, 2)
 
     def forward(
@@ -105,18 +97,17 @@ class TransformerPlanner(nn.Module):
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
 
-        b = track_left.size(0)
+        batch_size = track_left.size(0)
 
         track_combined = torch.cat((track_left, track_right), dim=2)
+        track_combined = track_combined.view(batch_size, -1)
 
         track_encoded = self.input_proj(track_combined)
-        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, b, 1)
+        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, batch_size, 1)
 
-        track_encoded = track_encoded.permute(1, 0, 2)
+        track_encoded = track_encoded.unsqueeze(0)
         decoder_output = self.transformer_decoder(query_embed, track_encoded)
-
-        decoder_output = decoder_output.permute(1, 0, 2)
-        waypoints = self.output_proj(decoder_output)
+        waypoints = self.output_proj(decoder_output.permute(1, 0, 2))
 
         return waypoints
 

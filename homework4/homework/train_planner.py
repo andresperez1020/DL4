@@ -90,18 +90,49 @@ def train_planner(
     save_model(model)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train the planner model.")
-    parser.add_argument("--model_name", type=str, default="cnn_planner", help="Model to train (e.g., mlp_planner, transformer_planner)")
-    parser.add_argument("--num_epoch", type=int, default=100, help="Number of training epochs")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
-    parser.add_argument("--seed", type=int, default=2024, help="Random seed")
+    # Define the command-line arguments
+    parser = argparse.ArgumentParser(description="Train planner models")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="cnn_planner",
+        help="Model to train. Options: mlp_planner, transformer_planner, cnn_planner, or all",
+    )
+    parser.add_argument(
+        "--num_epoch",
+        type=int,
+        default=100,
+        help="Number of epochs for training",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=1e-3,
+        help="Learning rate",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=256,
+        help="Batch size for training",
+    )
     args = parser.parse_args()
 
-    train_planner(
-        model_name=args.model_name,
-        num_epoch=args.num_epoch,
-        lr=args.lr,
-        batch_size=args.batch_size,
-        seed=args.seed,
-    )
+    # Define the models to train
+    models_to_train = []
+    if args.model_name == "all":
+        models_to_train = ["mlp_planner", "transformer_planner", "cnn_planner"]
+    else:
+        models_to_train = [args.model_name]
+
+    # Train each model
+    for model_name in models_to_train:
+        print(f"Training model: {model_name}")
+        train_planner(
+            model_name=model_name,
+            num_epoch=args.num_epoch,
+            lr=args.lr,
+            batch_size=args.batch_size,
+        )
+        print(f"Finished training: {model_name}")
+
