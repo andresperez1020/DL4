@@ -21,8 +21,16 @@ class MLPPlanner(nn.Module):
         """
         super().__init__()
 
-        self.n_track = n_track
-        self.n_waypoints = n_waypoints
+        input_size = n_track * 2 * 2
+        hidden_size = 64
+        output_size = n_waypoints * 2
+
+        self.mlp = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, output_size),
+        )
 
     def forward(
         self,
@@ -43,7 +51,14 @@ class MLPPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+
+        x = torch.cat((track_left, track_right), dim=2)
+
+        waypoints = self.mlp(x)
+
+        waypoints = waypoints.view(-1, self.n_waypoints, 2)
+
+        return waypoints
 
 
 class TransformerPlanner(nn.Module):
@@ -57,8 +72,18 @@ class TransformerPlanner(nn.Module):
 
         self.n_track = n_track
         self.n_waypoints = n_waypoints
+        self.d_model = d_model
 
         self.query_embed = nn.Embedding(n_waypoints, d_model)
+
+        self.input_proj = nn.Linear(n_track * 2, d_model)
+
+        self.transformer_decoder = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(d_model=d_model, nhead=4),
+            num_layers=3,
+        )
+
+        self.output_proj = nn.Linear(d_model, 2)
 
     def forward(
         self,
@@ -79,8 +104,21 @@ class TransformerPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
 
+        b = track_left.size(0)
+
+        track_combined = torch.cat((track_left, track_right), dim=2)
+
+        track_encoded = self.input_proj(track_combined)
+        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, b, 1)
+
+        track_encoded = track_encoded.permute(1, 0, 2)
+        decoder_output = self.transformer_decoder(query_embed, track_encoded)
+
+        decoder_output = decoder_output.permute(1, 0, 2)
+        waypoints = self.output_proj(decoder_output)
+
+        return waypoints
 
 class CNNPlanner(torch.nn.Module):
     def __init__(
@@ -94,6 +132,24 @@ class CNNPlanner(torch.nn.Module):
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN), persistent=False)
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD), persistent=False)
 
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(3 , 32, kernel_size = 3, stride = 2, padding = 1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size = 3, stride = 2, padding = 1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size = 3, stride = 2, padding = 1),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size = 3, stride = 2, padding = 1),
+            nn.ReLU(),
+        )
+
+        self.fc_layers = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(256 * 6 * 8, 512),
+            nn.ReLU(),
+            nn.Linear(512, n_waypoints * 2),
+        )
+
     def forward(self, image: torch.Tensor, **kwargs) -> torch.Tensor:
         """
         Args:
@@ -105,8 +161,12 @@ class CNNPlanner(torch.nn.Module):
         x = image
         x = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        raise NotImplementedError
+        x = self.conv_layers(x)
+        x = self.fc_layers(x)
 
+        waypoints = x.view(-1, self.n_waypoints, 2)
+
+        return waypoints
 
 MODEL_FACTORY = {
     "mlp_planner": MLPPlanner,
