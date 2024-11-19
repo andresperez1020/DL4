@@ -137,15 +137,13 @@ class CNNPlanner(torch.nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size = 3, stride = 2, padding = 1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size = 3, stride = 2, padding = 1),
-            nn.ReLU(),
         )
 
         self.fc_layers = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(256 * 6 * 8, 512),
+            nn.Linear(64 * 6 * 8, 128),
             nn.ReLU(),
-            nn.Linear(512, n_waypoints * 2),
+            nn.Linear(128, n_waypoints * 2),
         )
 
     def forward(self, image: torch.Tensor, **kwargs) -> torch.Tensor:
