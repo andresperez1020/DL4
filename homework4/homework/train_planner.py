@@ -48,36 +48,23 @@ def train_planner(
         planner_train.reset()
         planner_val.reset()
 
-        # Training phase
         model.train()
         for batch in train_data:
-            if model_name in ["mlp_planner", "transformer_planner"]:
-                track_left = batch["track_left"].to(device)
-                track_right = batch["track_right"].to(device)
-                label = batch["waypoints"].to(device)
-                label_mask = batch["waypoints_mask"].to(device)
+            track_left = batch["track_left"].to(device)
+            track_right = batch["track_right"].to(device)
+            label = batch["waypoints"].to(device)
+            label_mask = batch["waypoints_mask"].to(device)
 
-                # Add lateral data augmentation
-                track_left_aug = track_left + torch.randn_like(track_left) * 0.01  # Small random shift
-                track_right_aug = track_right + torch.randn_like(track_right) * 0.01
-                out = model(track_left_aug, track_right_aug)
+            out = model(track_left, track_right)
 
-            elif model_name == "cnn_planner":
-                img = batch["image"].to(device)
-                label = batch["waypoints"].to(device)
-                label_mask = batch["waypoints_mask"].to(device)
-                out = model(img)
-            else:
-                raise ValueError(f"Unsupported model_name: {model_name}")
+            # Loss function with lateral error weighting
+            lateral_loss_weight = 2.0
+            lateral_error = torch.abs(out[..., 0] - label[..., 0]) * label_mask
+            longitudinal_error = torch.abs(out[..., 1] - label[..., 1]) * label_mask
+            loss = (lateral_loss_weight * lateral_error + longitudinal_error).mean()
 
-            # Weighted loss function
-            lateral_weight = 2.0  # Increase weight for lateral error
-            loss = ((out - label) ** 2 * label_mask.unsqueeze(-1))
-            loss = loss[..., 0] * lateral_weight + loss[..., 1]
-            loss = loss.mean()
             planner_train.add(out, label, label_mask)
 
-            # Backpropagation
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -86,23 +73,18 @@ def train_planner(
         model.eval()
         with torch.inference_mode():
             for batch in val_data:
-                if model_name in ["mlp_planner", "transformer_planner"]:
-                    track_left = batch["track_left"].to(device)
-                    track_right = batch["track_right"].to(device)
-                    label = batch["waypoints"].to(device)
-                    label_mask = batch["waypoints_mask"].to(device)
-                    out = model(track_left, track_right)
-                elif model_name == "cnn_planner":
-                    img = batch["image"].to(device)
-                    label = batch["waypoints"].to(device)
-                    label_mask = batch["waypoints_mask"].to(device)
-                    out = model(img)
+                track_left = batch["track_left"].to(device)
+                track_right = batch["track_right"].to(device)
+                label = batch["waypoints"].to(device)
+                label_mask = batch["waypoints_mask"].to(device)
 
+                out = model(track_left, track_right)
                 planner_val.add(out, label, label_mask)
 
-        # Print metrics
+        # Compute and log metrics
         train_metrics = planner_train.compute()
         val_metrics = planner_val.compute()
+
         print(
             f"Epoch {epoch + 1:2d} / {num_epoch:2d}: "
             f"train_longitudinal_error={train_metrics['longitudinal_error']:.4f} "
