@@ -139,8 +139,6 @@ class CNNPlanner(torch.nn.Module):
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size = 3, stride = 2, padding = 1),
             nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size = 3, stride = 2, padding = 1),
-            nn.ReLU(),
         )
 
         self.fc_layers = nn.Sequential(
