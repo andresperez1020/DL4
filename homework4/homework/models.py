@@ -13,6 +13,8 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
+        d_model: int = 64,
+        num_decoder_layers: int = 1,
     ):
         """
         Args:
@@ -20,17 +22,25 @@ class MLPPlanner(nn.Module):
             n_waypoints (int): number of waypoints to predict
         """
         super().__init__()
+        self.n_track = n_track
         self.n_waypoints = n_waypoints
-        input_size = n_track * 2 * 2
-        hidden_size = 64
-        output_size = n_waypoints * 2
 
-        self.mlp = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(input_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, output_size),
-        )
+        # Embeddings and projections
+        self.query_embed = nn.Embedding(n_waypoints, d_model)
+        self.track_embed = nn.Linear(2, d_model)
+
+        # Positional encoding (optional)
+        self.positional_encoding = nn.Parameter(torch.randn(2 * n_track, d_model))
+
+        # Transformer decoder
+        nhead = 4
+        dim_feedforward = 128
+        dropout = 0.1
+        decoder_layer = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
+
+        # Output projection
+        self.output_layer = nn.Linear(d_model, 2)
 
     def forward(
         self,
@@ -84,8 +94,8 @@ class TransformerPlanner(nn.Module):
 
     def forward(
         self,
-        track_left: torch.Tensor,
-        track_right: torch.Tensor,
+        bev_track_left: torch.Tensor,
+        bev_track_right: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -102,17 +112,25 @@ class TransformerPlanner(nn.Module):
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
 
-        batch_size = track_left.size(0)
+        b = bev_track_left.size(0)
 
-        track_combined = torch.cat((track_left, track_right), dim=2)
-        track_combined = track_combined.view(batch_size, -1)
+        # Concatenate track boundaries and embed
+        bev_track = torch.cat([bev_track_left, bev_track_right], dim=1)
+        bev_track_embedded = self.track_embed(bev_track)
 
-        track_encoded = self.input_proj(track_combined)
-        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, batch_size, 1)
+        # Add positional encoding
+        bev_track_embedded += self.positional_encoding
+        bev_track_embedded = bev_track_embedded.permute(1, 0, 2)
 
-        track_encoded = track_encoded.unsqueeze(0)
-        decoder_output = self.transformer_decoder(query_embed, track_encoded)
-        waypoints = self.output_proj(decoder_output.permute(1, 0, 2))
+        # Query embeddings
+        query_embeds = self.query_embed.weight.unsqueeze(1).repeat(1, b, 1)
+
+        # Transformer decoder
+        transformer_output = self.transformer_decoder(query_embeds, bev_track_embedded)
+        transformer_output = transformer_output.permute(1, 0, 2)
+
+        # Output waypoints
+        waypoints = self.output_layer(transformer_output)
 
         return waypoints
 
