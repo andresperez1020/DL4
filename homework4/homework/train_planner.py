@@ -15,8 +15,8 @@ Usage:
 """
 def train_planner(
     model_name: str = "cnn_planner",
-    train_data_path: str = "road_data/train",
-    val_data_path: str = "road_data/val",
+    train_data_path: str = "drive_data/train",
+    val_data_path: str = "drive_data/val",
     num_epoch: int = 100,
     lr: float = 1e-3,
     batch_size: int = 256,
