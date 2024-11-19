@@ -48,14 +48,21 @@ def train_planner(
         planner_train.reset()
         planner_val.reset()
 
+        # Training phase
         model.train()
         for batch in train_data:
-            track_left = batch["track_left"].to(device)
-            track_right = batch["track_right"].to(device)
             label = batch["waypoints"].to(device)
             label_mask = batch["waypoints_mask"].to(device)
 
-            out = model(track_left, track_right)
+            if model_name in ["mlp_planner", "transformer_planner"]:
+                track_left = batch["track_left"].to(device)
+                track_right = batch["track_right"].to(device)
+                out = model(track_left, track_right)  # For MLP and Transformer models
+            elif model_name == "cnn_planner":
+                img = batch["image"].to(device)
+                out = model(img)  # For CNN model
+            else:
+                raise ValueError(f"Unsupported model_name: {model_name}")
 
             # Loss function with lateral error weighting
             lateral_loss_weight = 2.0
@@ -73,12 +80,19 @@ def train_planner(
         model.eval()
         with torch.inference_mode():
             for batch in val_data:
-                track_left = batch["track_left"].to(device)
-                track_right = batch["track_right"].to(device)
                 label = batch["waypoints"].to(device)
                 label_mask = batch["waypoints_mask"].to(device)
 
-                out = model(track_left, track_right)
+                if model_name in ["mlp_planner", "transformer_planner"]:
+                    track_left = batch["track_left"].to(device)
+                    track_right = batch["track_right"].to(device)
+                    out = model(track_left, track_right)
+                elif model_name == "cnn_planner":
+                    img = batch["image"].to(device)
+                    out = model(img)
+                else:
+                    raise ValueError(f"Unsupported model_name: {model_name}")
+
                 planner_val.add(out, label, label_mask)
 
         # Compute and log metrics
