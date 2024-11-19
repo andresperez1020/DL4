@@ -56,7 +56,12 @@ def train_planner(
                 track_right = batch["track_right"].to(device)
                 label = batch["waypoints"].to(device)
                 label_mask = batch["waypoints_mask"].to(device)
-                out = model(track_left, track_right)
+
+                # Add lateral data augmentation
+                track_left_aug = track_left + torch.randn_like(track_left) * 0.01  # Small random shift
+                track_right_aug = track_right + torch.randn_like(track_right) * 0.01
+                out = model(track_left_aug, track_right_aug)
+
             elif model_name == "cnn_planner":
                 img = batch["image"].to(device)
                 label = batch["waypoints"].to(device)
@@ -65,8 +70,11 @@ def train_planner(
             else:
                 raise ValueError(f"Unsupported model_name: {model_name}")
 
-            # Compute loss
-            loss = torch.mean((out - label) ** 2 * label_mask.unsqueeze(-1))
+            # Weighted loss function
+            lateral_weight = 2.0  # Increase weight for lateral error
+            loss = ((out - label) ** 2 * label_mask.unsqueeze(-1))
+            loss = loss[..., 0] * lateral_weight + loss[..., 1]
+            loss = loss.mean()
             planner_train.add(out, label, label_mask)
 
             # Backpropagation
@@ -92,17 +100,16 @@ def train_planner(
 
                 planner_val.add(out, label, label_mask)
 
-        # Log metrics
-        if epoch == 0 or epoch == num_epoch - 1 or (epoch + 1) % 10 == 0:
-            train_metrics = planner_train.compute()
-            val_metrics = planner_val.compute()
-            print(
-                f"Epoch {epoch + 1:2d} / {num_epoch:2d}: "
-                f"train_longitudinal_error={train_metrics['longitudinal_error']:.4f} "
-                f"train_lateral_error={train_metrics['lateral_error']:.4f} "
-                f"val_longitudinal_error={val_metrics['longitudinal_error']:.4f} "
-                f"val_lateral_error={val_metrics['lateral_error']:.4f}"
-            )
+        # Print metrics
+        train_metrics = planner_train.compute()
+        val_metrics = planner_val.compute()
+        print(
+            f"Epoch {epoch + 1:2d} / {num_epoch:2d}: "
+            f"train_longitudinal_error={train_metrics['longitudinal_error']:.4f} "
+            f"train_lateral_error={train_metrics['lateral_error']:.4f} "
+            f"val_longitudinal_error={val_metrics['longitudinal_error']:.4f} "
+            f"val_lateral_error={val_metrics['lateral_error']:.4f}"
+        )
 
     # Save model
     save_model(model)
