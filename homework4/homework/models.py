@@ -69,8 +69,13 @@ class TransformerPlanner(nn.Module):
         d_model: int = 64,
     ):
         super().__init__()
+        self.n_track = n_track
         self.n_waypoints = n_waypoints
+        self.d_model = d_model
+
+        self.query_embed = nn.Embedding(n_waypoints, d_model)
         self.input_proj  = nn.Linear(n_track * 4, d_model)
+
         self.transformer_decoder = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(d_model = d_model, nhead = 4),
             num_layers = 3
