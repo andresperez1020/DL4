@@ -51,24 +51,21 @@ def train_planner(
         # Training phase
         model.train()
         for batch in train_data:
+            track_left = batch["track_left"].to(device)
+            track_right = batch["track_right"].to(device)
             label = batch["waypoints"].to(device)
             label_mask = batch["waypoints_mask"].to(device)
 
-            if model_name in ["mlp_planner", "transformer_planner"]:
-                track_left = batch["track_left"].to(device)
-                track_right = batch["track_right"].to(device)
-                out = model(track_left, track_right)  # For MLP and Transformer models
-            elif model_name == "cnn_planner":
-                img = batch["image"].to(device)
-                out = model(img)  # For CNN model
-            else:
-                raise ValueError(f"Unsupported model_name: {model_name}")
+            out = model(track_left, track_right)
 
             # Loss function with lateral error weighting
-            lateral_loss_weight = 2.0
+            lateral_loss_weight = 3.0
+            longitudinal_loss_weight = 1.0
+
             lateral_error = torch.abs(out[..., 0] - label[..., 0]) * label_mask
             longitudinal_error = torch.abs(out[..., 1] - label[..., 1]) * label_mask
-            loss = (lateral_loss_weight * lateral_error + longitudinal_error).mean()
+
+            loss = (lateral_loss_weight * lateral_error + longitudinal_loss_weight * longitudinal_error).mean()
 
             planner_train.add(out, label, label_mask)
 
@@ -80,19 +77,12 @@ def train_planner(
         model.eval()
         with torch.inference_mode():
             for batch in val_data:
+                track_left = batch["track_left"].to(device)
+                track_right = batch["track_right"].to(device)
                 label = batch["waypoints"].to(device)
                 label_mask = batch["waypoints_mask"].to(device)
 
-                if model_name in ["mlp_planner", "transformer_planner"]:
-                    track_left = batch["track_left"].to(device)
-                    track_right = batch["track_right"].to(device)
-                    out = model(track_left, track_right)
-                elif model_name == "cnn_planner":
-                    img = batch["image"].to(device)
-                    out = model(img)
-                else:
-                    raise ValueError(f"Unsupported model_name: {model_name}")
-
+                out = model(track_left, track_right)
                 planner_val.add(out, label, label_mask)
 
         # Compute and log metrics
